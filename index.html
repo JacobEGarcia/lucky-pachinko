@@ -25,8 +25,35 @@
   #feverBadge{display:none;color:#ff9a5a;animation:pulse .5s ease-in-out infinite alternate}
   @keyframes pulse{from{opacity:.55}to{opacity:1}}
   #wrap{position:relative;z-index:2}
+  #wrap::before{content:'';position:absolute;inset:0;border-radius:14px;pointer-events:none;z-index:2;
+    background:linear-gradient(115deg,rgba(255,244,220,.10) 0%,rgba(255,244,220,.025) 24%,transparent 42%)}
   #wrap::after{content:'';position:absolute;inset:0;border-radius:14px;pointer-events:none;box-shadow:inset 0 0 90px rgba(10,4,8,.55)}
-  #scene{width:min(94vw,420px,calc(72vh * 0.488));aspect-ratio:480/860;border-radius:14px;box-shadow:0 22px 50px rgba(0,0,0,.55);display:block}
+  #scene{width:min(94vw,440px,calc((100dvh - 244px) * 0.558));aspect-ratio:480/860;border-radius:14px;box-shadow:0 22px 50px rgba(0,0,0,.55);display:block;transition:box-shadow 1.2s ease}
+  body.fever #scene{box-shadow:0 22px 50px rgba(0,0,0,.55),0 0 70px rgba(255,178,60,.38)}
+  body.fever::after{content:'';position:fixed;inset:0;z-index:1;pointer-events:none;
+    background:radial-gradient(ellipse at 50% 45%,rgba(255,170,50,.12),transparent 65%);animation:feverGlow 1.1s ease-in-out infinite alternate}
+  @keyframes feverGlow{from{opacity:.4}to{opacity:1}}
+  @media (prefers-reduced-motion:reduce){body.fever::after{animation:none}}
+  .railR{display:none}
+  @media (min-width:900px){
+    body{display:grid;grid-template-columns:minmax(230px,1fr) auto minmax(150px,1fr);
+      grid-template-areas:'brand scene railr' 'hud scene railr' 'btns scene railr' 'hint scene railr' 'poem scene railr';
+      column-gap:3.2vw;align-content:center;justify-items:center;padding:0 3vw}
+    #wrap{grid-area:scene}
+    #brand{grid-area:brand;width:auto;justify-self:end;margin-bottom:0}
+    #brand .vert{display:none}
+    #hud{grid-area:hud;width:auto;justify-self:end;margin-bottom:0}
+    #btns{grid-area:btns;margin-top:0}
+    #hint{grid-area:hint;margin-top:0}
+    #poem{grid-area:poem;margin-top:0}
+    .railR{display:flex;grid-area:railr;flex-direction:column;align-items:center;gap:26px;justify-self:start}
+    .railR .vr{writing-mode:vertical-rl;white-space:nowrap;font-size:17px;letter-spacing:12px;color:#c8a060;opacity:.8}
+    .railR .orn{width:2px;height:120px;background:linear-gradient(180deg,transparent,#c8a060 40%,#c8a060 60%,transparent);opacity:.5}
+    #scene{width:min(46vw,calc(96dvh * 0.488))}
+    body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+      background:radial-gradient(620px 340px at 7% 18%,rgba(255,140,60,.07),transparent 62%),
+                 radial-gradient(620px 340px at 93% 78%,rgba(200,48,46,.08),transparent 62%)}
+  }
   #mascot{position:absolute;right:-2px;top:-30px;width:70px;z-index:3;pointer-events:none;filter:drop-shadow(0 6px 10px rgba(0,0,0,.5));animation:breathe 3.6s ease-in-out infinite}
   @keyframes breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
   #mascot .mpaw{animation:mwave 1.1s ease-in-out infinite;transform-origin:62px 126px}
@@ -101,6 +128,7 @@
 </div>
 <div id="hint">HOLD to charge, RELEASE to fire - or hold to keep the koban flowing<br>大吉 center pocket pays tenfold - three jackpots light the FEVER</div>
 <div id="poem">千の玉、ひとつの運。</div>
+<div class="railR"><span class="vr">招き猫・玉</span><span class="orn"></span><span class="vr" style="font-size:13px;opacity:.55">千の玉、ひとつの運</span></div>
 <div id="card">
   <div id="panel">
     <div class="seal">福</div>
@@ -362,6 +390,49 @@ function burst(x,y,n){
   const pts=new THREE.Points(geo,mat);scene.add(pts);
   bursts.push({pts,vel,t:1.5});
 }
+// ---------- ball trails (visual only; physics untouched) ----------
+const TRAIL_MAX=720;
+const trailPos=new Float32Array(TRAIL_MAX*3);
+const trailLife=new Float32Array(TRAIL_MAX);
+for(let i=0;i<TRAIL_MAX;i++)trailPos[i*3+1]=-200;
+const trailGeo=new THREE.BufferGeometry();
+trailGeo.setAttribute('position',new THREE.BufferAttribute(trailPos,3));
+const trailPts=new THREE.Points(trailGeo,new THREE.PointsMaterial({color:0xffe2a0,size:3.2,transparent:true,opacity:.5,blending:THREE.AdditiveBlending,depthWrite:false}));
+trailPts.frustumCulled=false;scene.add(trailPts);
+let trailHead=0;
+function trailTick(dt){
+  for(const b of balls){
+    const s=Math.hypot(b.velocity.x,b.velocity.y);
+    if(s>8){
+      const i=trailHead;trailHead=(trailHead+1)%TRAIL_MAX;
+      trailPos[i*3]=px(b.position.x);trailPos[i*3+1]=9;trailPos[i*3+2]=pz(b.position.y);
+      trailLife[i]=.3;
+    }
+  }
+  for(let i=0;i<TRAIL_MAX;i++){if(trailLife[i]>0){trailLife[i]-=dt;if(trailLife[i]<=0)trailPos[i*3+1]=-200;}}
+  trailGeo.attributes.position.needsUpdate=true;
+}
+
+// ---------- koban rain on jackpot (visual only) ----------
+let rain=[];
+function kobanRain(){
+  for(let i=0;i<22;i++){
+    const m=new THREE.Mesh(ballGeo,ballMat);
+    m.position.set((Math.random()-.5)*420,120+Math.random()*220,-430-Math.random()*60);
+    m.rotation.z=(Math.random()-.5)*.6;m.castShadow=true;scene.add(m);
+    rain.push({m,vy:-(2+Math.random()*3),vr:(Math.random()-.5)*4,t:1.6});
+  }
+}
+function rainTick(dt){
+  for(let i=rain.length-1;i>=0;i--){
+    const r=rain[i];r.t-=dt;
+    r.m.position.y+=r.vy*dt*60;r.vy-=dt*3;
+    if(r.m.position.y<8){r.m.position.y=8;r.vy*=-.3;}
+    r.m.rotation.y+=r.vr*dt;
+    if(r.t<=0){scene.remove(r.m);rain.splice(i,1);}
+  }
+}
+
 function addScore(n,x,y){
   score+=n*(feverT>0?2:1);
   document.getElementById('score').textContent=score;
@@ -402,6 +473,7 @@ Events.on(engine,'collisionStart',ev=>{
       if(pk.pay>=10){
         jackpots++;document.getElementById('jp').textContent=jackpots;
         shake=.8;
+        kobanRain();
         if(jackpots%3===0&&feverT<=0){
           feverT=20;document.body.classList.add('fever');document.getElementById('feverBadge').style.display='inline';
           bark('FEVER. The paw cannot stop.');
@@ -441,6 +513,8 @@ function step(now){
     if(feverT<=0){document.body.classList.remove('fever');document.getElementById('feverBadge').style.display='none';glowP.intensity=.8;}
   }
   syncBallMeshes();
+  trailTick(dt);
+  rainTick(dt);
   for(const[peg,f]of pegFlash){
     const m=pegMeshes[PEGS.indexOf(peg)];
     if(f>.15){pegFlash.set(peg,f-dt*4);m.material.emissive.setHex(0xcc8800);}
